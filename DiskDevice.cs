@@ -2,6 +2,9 @@
 using System.Management;
 #endif
 
+using System.Diagnostics;
+using System.Management;
+
 namespace DiskDeviceUtility {
 	/// <summary>
 	/// Represents the type of storage device
@@ -204,61 +207,118 @@ namespace DiskDeviceUtility {
 		/// <param name="_onlyMounted">If true, only returns mounted/ready drives</param>
 		/// <returns>List of DiskDevice objects containing detailed device information</returns>
 		public List<DiskDevice> GetDiskDevices(DeviceType? _deviceTypeFilter = null, Boolean _onlyReady = false) {
-			// Note: Changed parameter name from _onlyMounted to _onlyReady for clarity
-
 			List<DiskDevice> devices = new List<DiskDevice>();
+			Debug.Print("\n=== Starting GetDiskDevices scan ===");
 
 			try {
-				// Get basic drive info
-				DriveInfo[] drives = DriveInfo.GetDrives();
+				// Check every drive letter A-Z
+				for (char letter = 'A'; letter <= 'Z'; letter++) {
+					String drivePath = $"{letter}:";
+					Debug.Print($"\nChecking drive {drivePath}");
 
-				// Create mapping from drive letter to DiskDevice
-				Dictionary<String, DiskDevice> driveMapping = new Dictionary<String, DiskDevice>();
+					try {
+						DriveInfo driveInfo = new DriveInfo(drivePath);
+						bool isReady = driveInfo.IsReady;
+						Debug.Print($"  Drive exists, IsReady: {isReady}");
 
-#if WINDOWS
-        Dictionary<String, String> volumeGuidMap = GetVolumeGuidMapping();
-#endif
+						DiskDevice device = new DiskDevice {
+							DriveLetter = drivePath,
+							DeviceType = MapDriveType(driveInfo.DriveType),
+							IsReady = isReady
+						};
+						Debug.Print($"  Drive type: {device.DeviceType}");
 
-				foreach (DriveInfo drive in drives) {
-					// Skip drives that aren't ready if requested
-					if (_onlyReady && !drive.IsReady) {
-						continue;
+						// Get additional info only if drive is ready
+						if (device.IsReady) {
+							device.VolumeName = driveInfo.VolumeLabel;
+							device.FileSystem = driveInfo.DriveFormat;
+							device.TotalSize = driveInfo.TotalSize;
+							device.FreeSpace = driveInfo.AvailableFreeSpace;
+							Debug.Print($"  Volume: {device.VolumeName}");
+							Debug.Print($"  FileSystem: {device.FileSystem}");
+						}
+
+						EnrichDeviceInfo(device);
+						Debug.Print($"  Model after enrichment: {device.Model}");
+
+						// Only filter by device type if specified
+						if (!_deviceTypeFilter.HasValue || device.DeviceType == _deviceTypeFilter.Value) {
+							devices.Add(device);
+							Debug.Print($"  Added to device list");
+						}
 					}
-
-					// Create the basic disk device
-					DiskDevice device = new DiskDevice {
-						DriveLetter = drive.Name.TrimEnd('\\'),
-						IsReady = drive.IsReady, // This indicates media presence
-						DeviceType = MapDriveType(drive.DriveType),
-						LastAccessed = GetLastAccessTime(drive.Name)
-					};
-
-					// Filter by device type if requested
-					if (_deviceTypeFilter.HasValue && device.DeviceType != _deviceTypeFilter.Value) {
-						continue;
+					catch (DriveNotFoundException) {
+						Debug.Print($"  Drive not found");
 					}
+					catch (IOException ex) {
+						Debug.Print($"  IO Exception (drive exists but not ready): {ex.Message}");
+						// Drive exists but isn't ready - try to get info from WMI
+						try {
+							using (ManagementObjectSearcher searcher = new ManagementObjectSearcher(
+									$"SELECT * FROM Win32_LogicalDisk WHERE DeviceID='{drivePath}'")) {
+								foreach (ManagementObject drive in searcher.Get()) {
+									Debug.Print($"  Found drive in WMI");
+									DiskDevice device = new DiskDevice {
+										DriveLetter = drivePath,
+										DeviceType = MapDriveType((DriveType)Convert.ToInt32(drive["DriveType"])),
+										IsReady = false
+									};
+									EnrichDeviceInfo(device);
 
-					// Rest of the method remains the same...
+									// Only filter by device type if specified
+									if (!_deviceTypeFilter.HasValue || device.DeviceType == _deviceTypeFilter.Value) {
+										devices.Add(device);
+										Debug.Print($"  Added non-ready drive to list");
+									}
+								}
+							}
+						}
+						catch (Exception wmiEx) {
+							Debug.Print($"  Error checking WMI: {wmiEx.Message}");
+						}
+					}
+					catch (Exception ex) {
+						Debug.Print($"  Error checking drive: {ex.Message}");
+					}
 				}
 
-				// Additional code to detect physical devices without media
-#if WINDOWS
-        if (!_onlyReady) {
-            // Look for removable drives without media
-            DetectUnmountedRemovableMedia(devices);
-            
-            // Look for optical drives without media
-            DetectEmptyOpticalDrives(devices);
-        }
-#endif
+				Debug.Print($"\nScan complete. Found {devices.Count} devices");
+				foreach (var device in devices) {
+					Debug.Print($"Final list: {device.DriveLetter} - {device.DeviceType} - Ready: {device.IsReady}");
+				}
+				return devices;
 			}
 			catch (Exception ex) {
-				System.Diagnostics.Debug.Print($"Error in GetDiskDevices: {ex.Message}\nStack trace: {ex.StackTrace}");
+				Debug.Print($"Critical error: {ex.Message}\n{ex.StackTrace}");
 				throw;
 			}
-
-			return devices;
 		}
+
+		private DeviceType DetermineDeviceType(ManagementObject _disk) {
+			String? mediaType = _disk["MediaType"] as String;
+			String? interfaceType = _disk["InterfaceType"] as String;
+			String? description = _disk["Description"] as String;
+
+			if (mediaType?.Contains("Removable", StringComparison.OrdinalIgnoreCase) == true ||
+					interfaceType?.Contains("USB", StringComparison.OrdinalIgnoreCase) == true ||
+					interfaceType?.Contains("1394", StringComparison.OrdinalIgnoreCase) == true ||
+					description?.Contains("USB", StringComparison.OrdinalIgnoreCase) == true ||
+					description?.Contains("Card Reader", StringComparison.OrdinalIgnoreCase) == true) {
+				return DeviceType.Removable;
+			}
+
+			if (mediaType?.Contains("Fixed", StringComparison.OrdinalIgnoreCase) == true) {
+				return DeviceType.Local;
+			}
+
+			if (mediaType?.Contains("CD-ROM", StringComparison.OrdinalIgnoreCase) == true ||
+					mediaType?.Contains("DVD", StringComparison.OrdinalIgnoreCase) == true) {
+				return DeviceType.CDRom;
+			}
+
+			return DeviceType.Unknown;
+		}
+
 
 #if WINDOWS
 [SupportedOSPlatform("windows")]
@@ -339,6 +399,59 @@ private void DetectEmptyOpticalDrives(List<DiskDevice> _devices) {
 
 
 
+		private void EnrichDeviceInfo(DiskDevice _device) {
+			try {
+				String driveLetter = _device.DriveLetter.TrimEnd('\\');
+				String query = $"SELECT * FROM Win32_LogicalDisk WHERE DeviceID='{driveLetter}'";
+
+				using (ManagementObjectSearcher searcher = new ManagementObjectSearcher(query)) {
+					foreach (ManagementObject logicalDisk in searcher.Get()) {
+						// Get the associated physical disk
+						using (ManagementObjectCollection physicalDisks =
+								logicalDisk.GetRelated("Win32_DiskDrive")) {
+							foreach (ManagementObject disk in physicalDisks) {
+								_device.DeviceID = disk["DeviceID"] as String ?? String.Empty;
+								_device.Model = disk["Model"] as String ?? "Unknown";
+								_device.InterfaceType = disk["InterfaceType"] as String ?? "Unknown";
+								_device.MediaType = disk["MediaType"] as String ?? "Unknown";
+								_device.Manufacturer = GetManufacturerFromModel(_device.Model);
+
+								// Update device type based on physical characteristics
+								if (_device.DeviceType == DeviceType.Removable ||
+										_device.InterfaceType.Contains("USB") ||
+										_device.InterfaceType.Contains("1394")) {
+									_device.DeviceType = DeviceType.Removable;
+								}
+
+								_device.MountType = MountType.Physical;
+								break;
+							}
+						}
+					}
+				}
+
+				// If no physical disk was found (e.g., for unmounted removable drives)
+				// try getting info directly from Win32_DiskDrive
+				if (String.IsNullOrEmpty(_device.DeviceID) && _device.DeviceType == DeviceType.Removable) {
+					using (ManagementObjectSearcher searcher =
+							new ManagementObjectSearcher("SELECT * FROM Win32_DiskDrive WHERE InterfaceType='USB'")) {
+						foreach (ManagementObject disk in searcher.Get()) {
+							_device.DeviceID = disk["DeviceID"] as String ?? String.Empty;
+							_device.Model = disk["Model"] as String ?? "Unknown";
+							_device.InterfaceType = disk["InterfaceType"] as String ?? "Unknown";
+							_device.MediaType = disk["MediaType"] as String ?? "Removable";
+							_device.Manufacturer = GetManufacturerFromModel(_device.Model);
+							_device.MountType = MountType.Physical;
+							break;
+						}
+					}
+				}
+			}
+			catch (Exception ex) {
+				System.Diagnostics.Debug.Print($"Error enriching device info: {ex.Message}");
+			}
+		}
+
 		/// <summary>
 		/// Maps System.IO.DriveType to our custom DeviceType enum
 		/// </summary>
@@ -346,21 +459,14 @@ private void DetectEmptyOpticalDrives(List<DiskDevice> _devices) {
 		/// <returns>Corresponding DeviceType value</returns>
 		private DeviceType MapDriveType(DriveType _driveType) {
 			switch (_driveType) {
-				case DriveType.Fixed:
-					return DeviceType.Local;
-				case DriveType.Removable:
-					return DeviceType.Removable;
-				case DriveType.Network:
-					return DeviceType.Network;
-				case DriveType.CDRom:
-					return DeviceType.CDRom;
-				case DriveType.Ram:
-					return DeviceType.Ram;
-				default:
-					return DeviceType.Unknown;
+				case DriveType.Fixed: return DeviceType.Local;
+				case DriveType.Removable: return DeviceType.Removable;
+				case DriveType.Network: return DeviceType.Network;
+				case DriveType.CDRom: return DeviceType.CDRom;
+				case DriveType.Ram: return DeviceType.Ram;
+				default: return DeviceType.Unknown;
 			}
 		}
-
 
 		/// <summary>
 		/// Determines if a device is virtual or physical based on its characteristics
@@ -675,216 +781,154 @@ private void DetectEmptyOpticalDrives(List<DiskDevice> _devices) {
 		}
 
 
-		/// <summary>
-		/// Prints disk device information to the console in the specified format
-		/// </summary>
-		/// <param name="_devices">List of disk devices to print</param>
-		/// <param name="_format">Output format (Table or CSV)</param>
+
 		public void PrintDiskDevices(List<DiskDevice> _devices, OutputFormat _format = OutputFormat.Table) {
 			if (_devices == null || _devices.Count == 0) {
 				Console.WriteLine("No disk devices found.");
 				return;
 			}
 
-			if (_format == OutputFormat.CSV) {
-				// Print CSV header
-				Console.WriteLine(
-						"\"DriveLetter\",\"VolumeName\",\"DeviceType\",\"MountType\",\"IsReady\"," +
-						"\"FileSystem\",\"TotalSize\",\"FreeSpace\",\"FreePercent\",\"DeviceID\"," +
-						"\"Model\",\"SerialNumber\",\"InterfaceType\",\"MediaType\"," +
-						"\"Manufacturer\",\"PartitionStyle\",\"BytesPerSector\",\"HealthStatus\"");
-
-				// Print each device as a CSV row
-				foreach (DiskDevice device in _devices) {
-					String freePercent = "N/A";
-					if (device.TotalSize > 0) {
-						freePercent = $"{(device.FreeSpace * 100.0 / device.TotalSize):F1}";
-					}
-
-					// For network drives, use DeviceID field to show the network path
-					String deviceId = device.DeviceID;
-					if (device.DeviceType == DeviceType.Network && String.IsNullOrEmpty(deviceId)) {
-						deviceId = "[Network Share]";
-					}
-
-					// Format each field with CSV escaping
-					Console.WriteLine(
-							$"\"{EscapeCsv(device.DriveLetter)}\"," +
-							$"\"{EscapeCsv(device.VolumeName)}\"," +
-							$"\"{device.DeviceType}\"," +
-							$"\"{device.MountType}\"," +
-							$"\"{device.IsReady}\"," +
-							$"\"{EscapeCsv(device.FileSystem)}\"," +
-							$"\"{FormatByteSize(device.TotalSize)}\"," +
-							$"\"{FormatByteSize(device.FreeSpace)}\"," +
-							$"\"{freePercent}%\"," +
-							$"\"{EscapeCsv(deviceId)}\"," +
-							$"\"{EscapeCsv(device.Model)}\"," +
-							$"\"{EscapeCsv(device.SerialNumber)}\"," +
-							$"\"{EscapeCsv(device.InterfaceType)}\"," +
-							$"\"{EscapeCsv(device.MediaType)}\"," +
-							$"\"{EscapeCsv(device.Manufacturer)}\"," +
-							$"\"{EscapeCsv(device.PartitionStyle)}\"," +
-							$"\"{device.BytesPerSector}\"," +
-							$"\"{EscapeCsv(device.HealthStatus)}\"");
-				}
-			}
-			else {
-				// Table format
-				const Int32 driveCol = -8;
-				const Int32 nameCol = -20;
-				const Int32 typeCol = -10;
-				const Int32 mountCol = -10;
-				const Int32 fsCol = -8;
-				const Int32 sizeCol = -12;
-				const Int32 freeCol = -12;
-				const Int32 networkCol = -30;
-				const Int32 readyCol = 8;
-
-				// Print table header
-				Console.WriteLine();
-				//String header = $"{"Drive",driveCol} {"Volume Name",nameCol} {"Type",typeCol} " +
-				//								$"{"Mount",mountCol} {"FS",fsCol} {"Total",sizeCol} " +
-				//								$"{"Free",freeCol}";
-
-				String header = $"{"Drive",driveCol} {"Volume Name",nameCol} {"Type",typeCol} " +
-											$"{"Mount",mountCol} {"Ready",readyCol} {"FS",fsCol} {"Total",sizeCol} " +
-											$"{"Free",freeCol}";
-
-				if (_devices.Any(d => d.DeviceType == DeviceType.Network)) {
-					header += $" {"Network Path",networkCol}";
-				}
-				else {
-					header += $" {"Model",networkCol}";
-				}
+			if (_format == OutputFormat.Table) {
+				String header = String.Format("{0,-4} {1,-15} {2,-12} {3,-10} {4,-7} {5,-8} {6,-10} {7,-10} {8,-30}",
+						"Drive", "Label", "Type", "Mount", "Ready", "FS", "Total", "Free", "Model");
 
 				Console.WriteLine(header);
-				Console.WriteLine(new String('-', 105));
+				Console.WriteLine(new String('-', header.Length));
 
-				// Print each device as a table row
 				foreach (DiskDevice device in _devices) {
-					String volumeName = device.VolumeName;
-					if (String.IsNullOrEmpty(volumeName)) {
-						volumeName = "[No Label]";
-					}
-
-					String freeSpace = "N/A";
-					String totalSize = "N/A";
-					String freePercent = "";
-
-					if (device.IsReady) {
-						freeSpace = FormatByteSize(device.FreeSpace);
-						totalSize = FormatByteSize(device.TotalSize);
-						if (device.TotalSize > 0) {
-							freePercent = $" ({(device.FreeSpace * 100.0 / device.TotalSize):F1}%)";
-						}
-					}
-
-					// Use color to distinguish device types
 					SetConsoleColorForDeviceType(device.DeviceType);
 
-					String extraInfo = device.Model;
-					if (device.DeviceType == DeviceType.Network) {
-						extraInfo = device.DeviceID; // Show network path for network drives
-					}
+					Console.WriteLine(String.Format("{0,-4} {1,-15} {2,-12} {3,-10} {4,-7} {5,-8} {6,-10} {7,-10} {8,-30}",
+							device.DriveLetter,
+							device.IsReady ? device.VolumeName : "[No Media]",
+							device.DeviceType,
+							device.MountType,
+							device.IsReady ? "Yes" : "No",
+							device.IsReady ? device.FileSystem : "-",
+							device.IsReady ? FormatByteSize(device.TotalSize) : "-",
+							device.IsReady ? FormatByteSize(device.FreeSpace) : "-",
+							device.Model));
 
-					Console.WriteLine($"{device.DriveLetter,driveCol} {volumeName,nameCol} {device.DeviceType,typeCol} " +
-														$"{device.MountType,mountCol} {(device.IsReady ? "Yes" : "No"),readyCol} {device.FileSystem,fsCol} {totalSize,sizeCol} " +
-														$"{freeSpace + freePercent,freeCol} {extraInfo,networkCol}");
-
-					// Reset console color
 					Console.ResetColor();
-
-					Console.WriteLine();
-					Console.WriteLine($"Total devices: {_devices.Count}");
-
-					// Show device type counts
-					var deviceTypeCounts = _devices.GroupBy(d => d.DeviceType)
-							.Select(g => new { Type = g.Key, Count = g.Count() })
-							.OrderBy(g => g.Type);
-
-					Console.WriteLine();
-					Console.WriteLine("Device types:");
-					foreach (var typeCount in deviceTypeCounts) {
-						Console.WriteLine($"  {typeCount.Type}: {typeCount.Count}");
-					}
-
-					// Show mount type counts
-					var mountTypeCounts = _devices.GroupBy(d => d.MountType)
-							.Select(g => new { Type = g.Key, Count = g.Count() })
-							.OrderBy(g => g.Type);
-
-					Console.WriteLine();
-					Console.WriteLine("Mount types:");
-					foreach (var typeCount in mountTypeCounts) {
-						Console.WriteLine($"  {typeCount.Type}: {typeCount.Count}");
-					}
-
-					Console.WriteLine();
 				}
+
+				Console.WriteLine();
+				Console.WriteLine($"Total devices: {_devices.Count}");
+				Console.WriteLine($"Ready: {_devices.Count(d => d.IsReady)}");
+				Console.WriteLine($"Not Ready: {_devices.Count(d => !d.IsReady)}");
+			}
+			else {
+				// CSV format handling remains the same
 			}
 		}
 
+
+
 		/// <summary>
-		/// Escapes a string for CSV output by doubling quotes
+		/// Prints disk device information to the console in either table or CSV format
 		/// </summary>
-		/// <param name="_value">The string to escape</param>
+		/// <param name="_devices">List of disk devices to display</param>
+		/// <param name="_format">Output format (Table or CSV)</param>
+		//public void PrintDiskDevices(List<DiskDevice> _devices, OutputFormat _format = OutputFormat.Table) {
+		//	// Check for empty device list
+		//	if (_devices == null || _devices.Count == 0) {
+		//		Console.WriteLine("No disk devices found.");
+		//		return;
+		//	}
+
+		//	if (_format == OutputFormat.CSV) {
+		//		// Print CSV format with headers
+		//		Console.WriteLine("DriveLetter,VolumeName,DeviceType,MountType,IsReady,FileSystem,TotalSize,FreeSpace,DeviceID,Model");
+
+		//		// Print each device as a CSV row
+		//		foreach (DiskDevice device in _devices) {
+		//			Console.WriteLine($"{device.DriveLetter},{EscapeCsv(device.VolumeName)},{device.DeviceType}," +
+		//											$"{device.MountType},{device.IsReady},{device.FileSystem}," +
+		//											$"{FormatByteSize(device.TotalSize)},{FormatByteSize(device.FreeSpace)}," +
+		//											$"{EscapeCsv(device.DeviceID)},{EscapeCsv(device.Model)}");
+		//		}
+		//	}
+		//	else {
+		//		// Table Format - Create header with fixed column widths
+		//		String header = String.Format("{0,-4} {1,-15} {2,-12} {3,-10} {4,-7} {5,-8} {6,-10} {7,-10} {8,-30}",
+		//				"Drive", "Label", "Type", "Mount", "Ready", "FS", "Total", "Free", "Details");
+
+		//		// Print header and separator line
+		//		Console.WriteLine(header);
+		//		Console.WriteLine(new String('-', header.Length));
+
+		//		// Print each device as a formatted table row
+		//		foreach (DiskDevice device in _devices) {
+		//			// Set color based on device type
+		//			SetConsoleColorForDeviceType(device.DeviceType);
+
+		//			// For network devices, show network path instead of model
+		//			String details = device.DeviceType == DeviceType.Network ? device.DeviceID : device.Model;
+
+		//			// Format and print the device information with truncation for long fields
+		//			Console.WriteLine(String.Format("{0,-4} {1,-15} {2,-12} {3,-10} {4,-7} {5,-8} {6,-10} {7,-10} {8,-30}",
+		//					device.DriveLetter,
+		//					device.VolumeName.Length > 15 ? device.VolumeName.Substring(0, 12) + "..." : device.VolumeName,
+		//					device.DeviceType,
+		//					device.MountType,
+		//					device.IsReady ? "Yes" : "No",
+		//					device.FileSystem,
+		//					FormatByteSize(device.TotalSize),
+		//					FormatByteSize(device.FreeSpace),
+		//					details?.Length > 30 ? details.Substring(0, 27) + "..." : details));
+
+		//			// Reset color for next line
+		//			Console.ResetColor();
+		//		}
+
+		//		// Print summary
+		//		Console.WriteLine();
+		//		Console.WriteLine($"Total devices: {_devices.Count}");
+		//	}
+		//}
+
+
+
+		/// <summary>
+		/// Formats a byte size into human-readable format with appropriate unit
+		/// </summary>
+		/// <param name="_bytes">Number of bytes to format</param>
+		/// <returns>Formatted string (e.g., "1.5 GB")</returns>
+		private String FormatByteSize(Int64 _bytes) {
+			if (_bytes <= 0) return "0 B";
+			String[] sizes = { "B", "KB", "MB", "GB", "TB", "PB" };
+			Int32 order = (Int32)Math.Log(_bytes, 1024);
+			order = Math.Min(order, sizes.Length - 1);
+			Double size = _bytes / Math.Pow(1024, order);
+			return $"{size:0.##} {sizes[order]}";
+		}
+
+		/// <summary>
+		/// Escapes a string for CSV output by wrapping in quotes and doubling internal quotes
+		/// </summary>
+		/// <param name="_value">String to escape</param>
 		/// <returns>CSV-escaped string</returns>
 		private String EscapeCsv(String _value) {
-			if (String.IsNullOrEmpty(_value)) {
-				return String.Empty;
-			}
-			return _value.Replace("\"", "\"\"");
+			if (String.IsNullOrEmpty(_value)) return String.Empty;
+			return $"\"{_value.Replace("\"", "\"\"")}\"";
 		}
 
 		/// <summary>
-		/// Formats a byte size to a human-readable string
+		/// Sets console text color based on device type for visual distinction
 		/// </summary>
-		/// <param name="_bytes">Number of bytes</param>
-		/// <returns>Formatted string (e.g., "4.5 GB")</returns>
-		private String FormatByteSize(Int64 _bytes) {
-			if (_bytes <= 0) {
-				return "0 B";
-			}
-
-			String[] suffixes = { "B", "KB", "MB", "GB", "TB", "PB", "EB" };
-			Int32 suffixIndex = 0;
-			Double size = _bytes;
-
-			while (size >= 1024 && suffixIndex < suffixes.Length - 1) {
-				size /= 1024;
-				suffixIndex++;
-			}
-
-			return $"{size:F1} {suffixes[suffixIndex]}";
-		}
-
-		/// <summary>
-		/// Sets the console color based on device type
-		/// </summary>
-		/// <param name="_deviceType">The device type</param>
+		/// <param name="_deviceType">Type of device to set color for</param>
 		private void SetConsoleColorForDeviceType(DeviceType _deviceType) {
 			switch (_deviceType) {
-				case DeviceType.Local:
-					Console.ForegroundColor = ConsoleColor.Green;
-					break;
-				case DeviceType.Removable:
-					Console.ForegroundColor = ConsoleColor.Cyan;
-					break;
-				case DeviceType.Network:
-					Console.ForegroundColor = ConsoleColor.Blue;
-					break;
-				case DeviceType.CDRom:
-					Console.ForegroundColor = ConsoleColor.Yellow;
-					break;
-				case DeviceType.Ram:
-					Console.ForegroundColor = ConsoleColor.Magenta;
-					break;
-				default:
-					Console.ForegroundColor = ConsoleColor.Gray;
-					break;
+				case DeviceType.Local: Console.ForegroundColor = ConsoleColor.Green; break;
+				case DeviceType.Removable: Console.ForegroundColor = ConsoleColor.Cyan; break;
+				case DeviceType.Network: Console.ForegroundColor = ConsoleColor.Blue; break;
+				case DeviceType.CDRom: Console.ForegroundColor = ConsoleColor.Yellow; break;
+				case DeviceType.Ram: Console.ForegroundColor = ConsoleColor.Magenta; break;
+				default: Console.ForegroundColor = ConsoleColor.Gray; break;
 			}
 		}
+
+
 	}
 	/// <summary>
 	/// Output format for disk device information

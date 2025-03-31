@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using DiskDeviceUtility;  // Reference to your library
 
 namespace DiskDeviceConsoleTest {
-	class Program {
+	static class Program {
 		static void Main(String[] _args) {
 			Console.WriteLine("Disk Device Information Utility");
 			Console.WriteLine("==============================\n");

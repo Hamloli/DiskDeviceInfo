@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35825.156 d17.13
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GetDiskDevices", "GetDiskDevices.csproj", "{2CF79BF0-2F98-464D-9142-44B97D615043}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "gddTest", "..\gddTest\gddTest.csproj", "{7563AE08-4994-48E4-B968-6E6934C9BBFC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2CF79BF0-2F98-464D-9142-44B97D615043}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2CF79BF0-2F98-464D-9142-44B97D615043}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2CF79BF0-2F98-464D-9142-44B97D615043}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2CF79BF0-2F98-464D-9142-44B97D615043}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7563AE08-4994-48E4-B968-6E6934C9BBFC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7563AE08-4994-48E4-B968-6E6934C9BBFC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7563AE08-4994-48E4-B968-6E6934C9BBFC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7563AE08-4994-48E4-B968-6E6934C9BBFC}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {1D0F197E-F81E-4901-B01C-7731080DBC37}
+	EndGlobalSection
+EndGlobal

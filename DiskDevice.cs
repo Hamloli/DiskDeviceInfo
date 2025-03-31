@@ -214,7 +214,7 @@ namespace DiskDeviceUtility {
 				Dictionary<String, DiskDevice> driveMapping = new Dictionary<String, DiskDevice>();
 
 #if WINDOWS
-                Dictionary<String, String> volumeGuidMap = GetVolumeGuidMapping();
+								Dictionary<String, String> volumeGuidMap = GetVolumeGuidMapping();
 #endif
 
 				foreach (DriveInfo drive in drives) {
@@ -232,10 +232,10 @@ namespace DiskDeviceUtility {
 					};
 
 #if WINDOWS
-                    // Map volume GUID if available
-                    if (volumeGuidMap.ContainsKey(device.DriveLetter)) {
-                        device.VolumeGuid = volumeGuidMap[device.DriveLetter];
-                    }
+										// Map volume GUID if available
+										if (volumeGuidMap.ContainsKey(device.DriveLetter)) {
+												device.VolumeGuid = volumeGuidMap[device.DriveLetter];
+										}
 #endif
 
 					// Filter by device type if requested
@@ -256,8 +256,8 @@ namespace DiskDeviceUtility {
 				}
 
 #if WINDOWS
-                // Windows-specific enhancements using WMI
-                EnrichWithWindowsSpecificInfo(driveMapping);
+								// Windows-specific enhancements using WMI
+								EnrichWithWindowsSpecificInfo(driveMapping);
 #endif
 
 				//// Mark any remaining drives that couldn't be mapped to physical devices
@@ -385,160 +385,160 @@ namespace DiskDeviceUtility {
 		}
 
 #if WINDOWS
-        [SupportedOSPlatform("windows")]
-        private void EnrichWithWindowsSpecificInfo(Dictionary<String, DiskDevice> _driveMapping) {
-            try {
-                // Add physical disk information from WMI
-                EnrichWithPhysicalDiskInfo(_driveMapping);
-                
-                // Add disk partition information including partition style
-                EnrichWithPartitionInfo(_driveMapping);
-                
-                // Add SMART health status where available
-                EnrichWithHealthStatus(_driveMapping);
-            } catch (Exception ex) {
-                System.Diagnostics.Debug.Print($"Error enriching with Windows-specific info: {ex.Message}");
-            }
-        }
+				[SupportedOSPlatform("windows")]
+				private void EnrichWithWindowsSpecificInfo(Dictionary<String, DiskDevice> _driveMapping) {
+						try {
+								// Add physical disk information from WMI
+								EnrichWithPhysicalDiskInfo(_driveMapping);
+								
+								// Add disk partition information including partition style
+								EnrichWithPartitionInfo(_driveMapping);
+								
+								// Add SMART health status where available
+								EnrichWithHealthStatus(_driveMapping);
+						} catch (Exception ex) {
+								System.Diagnostics.Debug.Print($"Error enriching with Windows-specific info: {ex.Message}");
+						}
+				}
 
-        /// <summary>
-        /// Maps Windows volume GUIDs to drive letters
-        /// </summary>
-        /// <returns>Dictionary mapping drive letters to volume GUIDs</returns>
-        [SupportedOSPlatform("windows")]
-        private Dictionary<String, String> GetVolumeGuidMapping() {
-            Dictionary<String, String> volumeMap = new Dictionary<String, String>();
-            
-            try {
-                using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT DeviceID, DriveLetter FROM Win32_Volume WHERE DriveLetter IS NOT NULL")) {
-                    foreach (ManagementObject volume in searcher.Get()) {
-                        String? deviceId = volume["DeviceID"] as String;
-                        String? driveLetter = volume["DriveLetter"] as String;
-                        
-                        if (!String.IsNullOrEmpty(driveLetter) && deviceId != null) {
-                            volumeMap[driveLetter] = deviceId;
-                        }
-                    }
-                }
-            } catch (Exception ex) {
-                System.Diagnostics.Debug.Print($"Error getting volume GUID mapping: {ex.Message}");
-            }
-            
-            return volumeMap;
-        }
+				/// <summary>
+				/// Maps Windows volume GUIDs to drive letters
+				/// </summary>
+				/// <returns>Dictionary mapping drive letters to volume GUIDs</returns>
+				[SupportedOSPlatform("windows")]
+				private Dictionary<String, String> GetVolumeGuidMapping() {
+						Dictionary<String, String> volumeMap = new Dictionary<String, String>();
+						
+						try {
+								using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT DeviceID, DriveLetter FROM Win32_Volume WHERE DriveLetter IS NOT NULL")) {
+										foreach (ManagementObject volume in searcher.Get()) {
+												String? deviceId = volume["DeviceID"] as String;
+												String? driveLetter = volume["DriveLetter"] as String;
+												
+												if (!String.IsNullOrEmpty(driveLetter) && deviceId != null) {
+														volumeMap[driveLetter] = deviceId;
+												}
+										}
+								}
+						} catch (Exception ex) {
+								System.Diagnostics.Debug.Print($"Error getting volume GUID mapping: {ex.Message}");
+						}
+						
+						return volumeMap;
+				}
 
-        /// <summary>
-        /// Enriches drive information with physical disk details from WMI
-        /// </summary>
-        /// <param name="_driveMapping">Mapping of drive letters to DiskDevice objects</param>
-        [SupportedOSPlatform("windows")]
-        private void EnrichWithPhysicalDiskInfo(Dictionary<String, DiskDevice> _driveMapping) {
-            try {
-                using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT * FROM Win32_DiskDrive")) {
-                    foreach (ManagementObject disk in searcher.Get()) {
-                        // Get partition associations
-                        using (ManagementObjectCollection partitions = disk.GetRelated("Win32_DiskPartition")) {
-                            foreach (ManagementObject partition in partitions) {
-                                using (ManagementObjectCollection logicalDisks = partition.GetRelated("Win32_LogicalDisk")) {
-                                    foreach (ManagementObject logicalDisk in logical Disks) {
-                                        String? driveLetter = logicalDisk["DeviceID"] as String;
-                                        
-                                        if (!String.IsNullOrEmpty(driveLetter) && _driveMapping.ContainsKey(driveLetter)) {
-                                            DiskDevice device = _driveMapping[driveLetter];
-                                            device.DeviceID = disk["DeviceID"] as String ?? String.Empty;
-                                            device.Model = disk["Model"] as String ?? "Unknown";
-                                            device.SerialNumber = disk["SerialNumber"] as String ?? String.Empty;
-                                            device.InterfaceType = disk["InterfaceType"] as String ?? "Unknown";
-                                            device.MediaType = disk["MediaType"] as String ?? "Unknown";
-                                            device.FirmwareRevision = disk["FirmwareRevision"] as String ?? String.Empty;
-                                            device.Manufacturer = GetManufacturerFromModel(device.Model);
-                                            device.BytesPerSector = Convert.ToUInt32(disk["BytesPerSector"] ?? 512);
-                                            device.BusType = DetermineBusType(device.InterfaceType, device.DeviceID);
-                                            
-                                            // Determine mount type based on physical device characteristics
-                                            if (device.InterfaceType.Contains("USB") || device.InterfaceType.Contains("1394")) {
-                                                device.MountType = MountType.Physical;
-                                            } else if (device.DeviceType == DeviceType.Network) {
-                                                device.MountType = MountType.Network;
-                                            } else if (device.InterfaceType.Contains("IDE") || 
-                                                      device.InterfaceType.Contains("SCSI") || 
-                                                      device.InterfaceType.Contains("SATA") || 
-                                                      device.InterfaceType.Contains("SAS") ||
-                                                      device.InterfaceType.Contains("NVMe")) {
-                                                device.MountType = MountType.Physical;
-                                            } else {
-                                                device.MountType = DetermineVirtualOrPhysical(device);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (Exception ex) {
-                System.Diagnostics.Debug.Print($"Error enriching physical disk info: {ex.Message}");
-            }
-        }
+				/// <summary>
+				/// Enriches drive information with physical disk details from WMI
+				/// </summary>
+				/// <param name="_driveMapping">Mapping of drive letters to DiskDevice objects</param>
+				[SupportedOSPlatform("windows")]
+				private void EnrichWithPhysicalDiskInfo(Dictionary<String, DiskDevice> _driveMapping) {
+						try {
+								using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT * FROM Win32_DiskDrive")) {
+										foreach (ManagementObject disk in searcher.Get()) {
+												// Get partition associations
+												using (ManagementObjectCollection partitions = disk.GetRelated("Win32_DiskPartition")) {
+														foreach (ManagementObject partition in partitions) {
+																using (ManagementObjectCollection logicalDisks = partition.GetRelated("Win32_LogicalDisk")) {
+																		foreach (ManagementObject logicalDisk in logical Disks) {
+																				String? driveLetter = logicalDisk["DeviceID"] as String;
+																				
+																				if (!String.IsNullOrEmpty(driveLetter) && _driveMapping.ContainsKey(driveLetter)) {
+																						DiskDevice device = _driveMapping[driveLetter];
+																						device.DeviceID = disk["DeviceID"] as String ?? String.Empty;
+																						device.Model = disk["Model"] as String ?? "Unknown";
+																						device.SerialNumber = disk["SerialNumber"] as String ?? String.Empty;
+																						device.InterfaceType = disk["InterfaceType"] as String ?? "Unknown";
+																						device.MediaType = disk["MediaType"] as String ?? "Unknown";
+																						device.FirmwareRevision = disk["FirmwareRevision"] as String ?? String.Empty;
+																						device.Manufacturer = GetManufacturerFromModel(device.Model);
+																						device.BytesPerSector = Convert.ToUInt32(disk["BytesPerSector"] ?? 512);
+																						device.BusType = DetermineBusType(device.InterfaceType, device.DeviceID);
+																						
+																						// Determine mount type based on physical device characteristics
+																						if (device.InterfaceType.Contains("USB") || device.InterfaceType.Contains("1394")) {
+																								device.MountType = MountType.Physical;
+																						} else if (device.DeviceType == DeviceType.Network) {
+																								device.MountType = MountType.Network;
+																						} else if (device.InterfaceType.Contains("IDE") || 
+																											device.InterfaceType.Contains("SCSI") || 
+																											device.InterfaceType.Contains("SATA") || 
+																											device.InterfaceType.Contains("SAS") ||
+																											device.InterfaceType.Contains("NVMe")) {
+																								device.MountType = MountType.Physical;
+																						} else {
+																								device.MountType = DetermineVirtualOrPhysical(device);
+																						}
+																				}
+																		}
+																}
+														}
+												}
+										}
+								}
+						} catch (Exception ex) {
+								System.Diagnostics.Debug.Print($"Error enriching physical disk info: {ex.Message}");
+						}
+				}
 
-        /// <summary>
-        /// Enriches drive information with partition details
-        /// </summary>
-        /// <param name="_driveMapping">Mapping of drive letters to DiskDevice objects</param>
-        [SupportedOSPlatform("windows")]
-        private void EnrichWithPartitionInfo(Dictionary<String, DiskDevice> _driveMapping) {
-            try {
-                using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT * FROM Win32_DiskPartition")) {
-                    foreach (ManagementObject partition in searcher.Get()) {
-                        using (ManagementObjectCollection logicalDisks = partition.GetRelated("Win32_LogicalDisk")) {
-                            foreach (ManagementObject logicalDisk in logicalDisks) {
-                                String? driveLetter = logicalDisk["DeviceID"] as String;
-                                
-                                if (!String.IsNullOrEmpty(driveLetter) && _driveMapping.ContainsKey(driveLetter)) {
-                                    String? type = partition["Type"] as String;
-                                    if (type?.Contains("GPT") == true) {
-                                        _driveMapping[driveLetter].PartitionStyle = "GPT";
-                                    } else if (type?.Contains("MBR") == true || type?.Contains("Partition") == true) {
-                                        _driveMapping[driveLetter].PartitionStyle = "MBR";
-                                    } else {
-                                        _driveMapping[driveLetter].PartitionStyle = type ?? "Unknown";
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (Exception ex) {
-                System.Diagnostics.Debug.Print($"Error enriching partition info: {ex.Message}");
-            }
-        }
+				/// <summary>
+				/// Enriches drive information with partition details
+				/// </summary>
+				/// <param name="_driveMapping">Mapping of drive letters to DiskDevice objects</param>
+				[SupportedOSPlatform("windows")]
+				private void EnrichWithPartitionInfo(Dictionary<String, DiskDevice> _driveMapping) {
+						try {
+								using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT * FROM Win32_DiskPartition")) {
+										foreach (ManagementObject partition in searcher.Get()) {
+												using (ManagementObjectCollection logicalDisks = partition.GetRelated("Win32_LogicalDisk")) {
+														foreach (ManagementObject logicalDisk in logicalDisks) {
+																String? driveLetter = logicalDisk["DeviceID"] as String;
+																
+																if (!String.IsNullOrEmpty(driveLetter) && _driveMapping.ContainsKey(driveLetter)) {
+																		String? type = partition["Type"] as String;
+																		if (type?.Contains("GPT") == true) {
+																				_driveMapping[driveLetter].PartitionStyle = "GPT";
+																		} else if (type?.Contains("MBR") == true || type?.Contains("Partition") == true) {
+																				_driveMapping[driveLetter].PartitionStyle = "MBR";
+																		} else {
+																				_driveMapping[driveLetter].PartitionStyle = type ?? "Unknown";
+																		}
+																}
+														}
+												}
+										}
+								}
+						} catch (Exception ex) {
+								System.Diagnostics.Debug.Print($"Error enriching partition info: {ex.Message}");
+						}
+				}
 
-        /// <summary>
-        /// Adds health status information where available
-        /// </summary>
-        /// <param name="_driveMapping">Mapping of drive letters to DiskDevice objects</param>
-        [SupportedOSPlatform("windows")]
-        private void EnrichWithHealthStatus(Dictionary<String, DiskDevice> _driveMapping) {
-            try {
-                using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT * FROM Win32_DiskDrive")) {
-                    foreach (ManagementObject disk in searcher.Get()) {
-                        String? deviceID = disk["DeviceID"] as String;
-                        String? status = disk["Status"] as String;
-                        
-                        if (!String.IsNullOrEmpty(deviceID)) {
-                            // Find all devices mapped to this physical disk
-                            foreach (var device in _driveMapping.Values) {
-                                if (device.DeviceID == deviceID) {
-                                    device.HealthStatus = status ?? "Unknown";
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (Exception ex) {
-                System.Diagnostics.Debug.Print($"Error enriching health status: {ex.Message}");
-            }
-        }
+				/// <summary>
+				/// Adds health status information where available
+				/// </summary>
+				/// <param name="_driveMapping">Mapping of drive letters to DiskDevice objects</param>
+				[SupportedOSPlatform("windows")]
+				private void EnrichWithHealthStatus(Dictionary<String, DiskDevice> _driveMapping) {
+						try {
+								using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT * FROM Win32_DiskDrive")) {
+										foreach (ManagementObject disk in searcher.Get()) {
+												String? deviceID = disk["DeviceID"] as String;
+												String? status = disk["Status"] as String;
+												
+												if (!String.IsNullOrEmpty(deviceID)) {
+														// Find all devices mapped to this physical disk
+														foreach (var device in _driveMapping.Values) {
+																if (device.DeviceID == deviceID) {
+																		device.HealthStatus = status ?? "Unknown";
+																}
+														}
+												}
+										}
+								}
+						} catch (Exception ex) {
+								System.Diagnostics.Debug.Print($"Error enriching health status: {ex.Message}");
+						}
+				}
 #endif
 
 		/// <summary>
@@ -611,5 +611,222 @@ namespace DiskDeviceUtility {
 
 			return _interfaceType;
 		}
+
+		/// <summary>
+		/// Gets the last access time of a drive
+		/// </summary>
+		/// <param name="_driveLetter">Drive letter to check</param>
+		/// <returns>The last access time, or null if unavailable</returns>
+		private DateTime? GetLastAccessTime(String _driveLetter) {
+			try {
+				DirectoryInfo dirInfo = new DirectoryInfo(_driveLetter);
+				return dirInfo.LastAccessTime;
+			}
+			catch {
+				return null;
+			}
+		}
+
+
+		/// <summary>
+		/// Output format for disk device information
+		/// </summary>
+		public enum OutputFormat {
+			/// <summary>Formatted table output</summary>
+			Table,
+
+			/// <summary>CSV format for data import</summary>
+			CSV
+		}
+
+		/// <summary>
+		/// Prints disk device information to the console in the specified format
+		/// </summary>
+		/// <param name="_devices">List of disk devices to print</param>
+		/// <param name="_format">Output format (Table or CSV)</param>
+		public void PrintDiskDevices(List<DiskDevice> _devices, OutputFormat _format = OutputFormat.Table) {
+			if (_devices == null || _devices.Count == 0) {
+				Console.WriteLine("No disk devices found.");
+				return;
+			}
+
+			if (_format == OutputFormat.CSV) {
+				// Print CSV header
+				Console.WriteLine(
+						"\"DriveLetter\",\"VolumeName\",\"DeviceType\",\"MountType\",\"IsReady\"," +
+						"\"FileSystem\",\"TotalSize\",\"FreeSpace\",\"FreePercent\",\"DeviceID\"," +
+						"\"Model\",\"SerialNumber\",\"InterfaceType\",\"MediaType\"," +
+						"\"Manufacturer\",\"PartitionStyle\",\"BytesPerSector\",\"HealthStatus\"");
+
+				// Print each device as a CSV row
+				foreach (DiskDevice device in _devices) {
+					String freePercent = "N/A";
+					if (device.TotalSize > 0) {
+						freePercent = $"{(device.FreeSpace * 100.0 / device.TotalSize):F1}";
+					}
+
+					// Format each field with CSV escaping (double quotes around fields, double up quotes within fields)
+					Console.WriteLine(
+							$"\"{EscapeCsv(device.DriveLetter)}\"," +
+							$"\"{EscapeCsv(device.VolumeName)}\"," +
+							$"\"{device.DeviceType}\"," +
+							$"\"{device.MountType}\"," +
+							$"\"{device.IsReady}\"," +
+							$"\"{EscapeCsv(device.FileSystem)}\"," +
+							$"\"{FormatByteSize(device.TotalSize)}\"," +
+							$"\"{FormatByteSize(device.FreeSpace)}\"," +
+							$"\"{freePercent}%\"," +
+							$"\"{EscapeCsv(device.DeviceID)}\"," +
+							$"\"{EscapeCsv(device.Model)}\"," +
+							$"\"{EscapeCsv(device.SerialNumber)}\"," +
+							$"\"{EscapeCsv(device.InterfaceType)}\"," +
+							$"\"{EscapeCsv(device.MediaType)}\"," +
+							$"\"{EscapeCsv(device.Manufacturer)}\"," +
+							$"\"{EscapeCsv(device.PartitionStyle)}\"," +
+							$"\"{device.BytesPerSector}\"," +
+							$"\"{EscapeCsv(device.HealthStatus)}\"");
+				}
+			}
+			else {
+				// Table format
+				const Int32 driveCol = -12;
+				const Int32 nameCol = -20;
+				const Int32 typeCol = -10;
+				const Int32 mountCol = -10;
+				const Int32 fsCol = -8;
+				const Int32 sizeCol = -12;
+				const Int32 freeCol = -12;
+				const Int32 modelCol = -25;
+
+				// Print table header
+				Console.WriteLine();
+				Console.WriteLine($"{"Drive",driveCol} {"Volume Name",nameCol} {"Type",typeCol} " +
+													$"{"Mount",mountCol} {"FS",fsCol} {"Total",sizeCol} " +
+													$"{"Free",freeCol} {"Model",modelCol}");
+				Console.WriteLine(new String('-', 105));
+
+				// Print each device as a table row
+				foreach (DiskDevice device in _devices) {
+					String volumeName = device.VolumeName;
+					if (String.IsNullOrEmpty(volumeName)) {
+						volumeName = "[No Label]";
+					}
+
+					String freeSpace = "N/A";
+					String totalSize = "N/A";
+					String freePercent = "";
+
+					if (device.IsReady) {
+						freeSpace = FormatByteSize(device.FreeSpace);
+						totalSize = FormatByteSize(device.TotalSize);
+						if (device.TotalSize > 0) {
+							freePercent = $" ({(device.FreeSpace * 100.0 / device.TotalSize):F1}%)";
+						}
+					}
+
+					// Use color to distinguish device types
+					SetConsoleColorForDeviceType(device.DeviceType);
+
+					Console.WriteLine($"{device.DriveLetter,driveCol} {volumeName,nameCol} {device.DeviceType,typeCol} " +
+														$"{device.MountType,mountCol} {device.FileSystem,fsCol} {totalSize,sizeCol} " +
+														$"{freeSpace + freePercent,freeCol} {device.Model,modelCol}");
+				}
+
+				// Reset console color
+				Console.ResetColor();
+
+				Console.WriteLine();
+				Console.WriteLine($"Total devices: {_devices.Count}");
+
+				// Show device type counts
+				var deviceTypeCounts = _devices.GroupBy(d => d.DeviceType)
+						.Select(g => new { Type = g.Key, Count = g.Count() })
+						.OrderBy(g => g.Type);
+
+				Console.WriteLine();
+				Console.WriteLine("Device types:");
+				foreach (var typeCount in deviceTypeCounts) {
+					Console.WriteLine($"  {typeCount.Type}: {typeCount.Count}");
+				}
+
+				// Show mount type counts
+				var mountTypeCounts = _devices.GroupBy(d => d.MountType)
+						.Select(g => new { Type = g.Key, Count = g.Count() })
+						.OrderBy(g => g.Type);
+
+				Console.WriteLine();
+				Console.WriteLine("Mount types:");
+				foreach (var typeCount in mountTypeCounts) {
+					Console.WriteLine($"  {typeCount.Type}: {typeCount.Count}");
+				}
+
+				Console.WriteLine();
+			}
+		}
+
+		/// <summary>
+		/// Escapes a string for CSV output by doubling quotes
+		/// </summary>
+		/// <param name="_value">The string to escape</param>
+		/// <returns>CSV-escaped string</returns>
+		private String EscapeCsv(String _value) {
+			if (String.IsNullOrEmpty(_value)) {
+				return String.Empty;
+			}
+			return _value.Replace("\"", "\"\"");
+		}
+
+		/// <summary>
+		/// Formats a byte size to a human-readable string
+		/// </summary>
+		/// <param name="_bytes">Number of bytes</param>
+		/// <returns>Formatted string (e.g., "4.5 GB")</returns>
+		private String FormatByteSize(Int64 _bytes) {
+			if (_bytes <= 0) {
+				return "0 B";
+			}
+
+			String[] suffixes = { "B", "KB", "MB", "GB", "TB", "PB", "EB" };
+			Int32 suffixIndex = 0;
+			Double size = _bytes;
+
+			while (size >= 1024 && suffixIndex < suffixes.Length - 1) {
+				size /= 1024;
+				suffixIndex++;
+			}
+
+			return $"{size:F1} {suffixes[suffixIndex]}";
+		}
+
+		/// <summary>
+		/// Sets the console color based on device type
+		/// </summary>
+		/// <param name="_deviceType">The device type</param>
+		private void SetConsoleColorForDeviceType(DeviceType _deviceType) {
+			switch (_deviceType) {
+				case DeviceType.Local:
+					Console.ForegroundColor = ConsoleColor.Green;
+					break;
+				case DeviceType.Removable:
+					Console.ForegroundColor = ConsoleColor.Cyan;
+					break;
+				case DeviceType.Network:
+					Console.ForegroundColor = ConsoleColor.Blue;
+					break;
+				case DeviceType.CDRom:
+					Console.ForegroundColor = ConsoleColor.Yellow;
+					break;
+				case DeviceType.Ram:
+					Console.ForegroundColor = ConsoleColor.Magenta;
+					break;
+				default:
+					Console.ForegroundColor = ConsoleColor.Gray;
+					break;
+			}
+		}
+
+
+
+
 	}
 }

